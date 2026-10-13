@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Colar imagem e salvar como JPG</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; padding: 20px; }
+    .box { border: 2px dashed #888; padding: 30px; text-align: center; border-radius: 8px; }
+    img { max-width: 100%; margin-top: 12px; }
+    small { color: #666; display:block; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <h1>Colar imagem (Ctrl+V) → salva como JPG</h1>
+  <div class="box" id="box">
+    Clique aqui e pressione Ctrl+V (ou cole) para capturar a imagem da área de transferência.
+    <small>Suporta imagens copiadas (PNG, BMP, etc.) em navegadores modernos.</small>
+    <div id="previewArea"></div>
+  </div>
+
+  <script>
+    const box = document.getElementById('box');
+    const previewArea = document.getElementById('previewArea');
+
+    // Garante foco pra receber o evento de paste
+    box.tabIndex = 0;
+    box.addEventListener('click', () => box.focus());
+
+    document.addEventListener('paste', async (event) => {
+      const items = event.clipboardData && event.clipboardData.items;
+      if (!items) return;
+
+      // Procura por item de imagem
+      for (const item of items) {
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (!file) continue;
+
+          try {
+            // Usa createImageBitmap quando disponível (mais eficiente)
+            let imgBitmap;
+            if (window.createImageBitmap) {
+              imgBitmap = await createImageBitmap(file);
+              const w = imgBitmap.width;
+              const h = imgBitmap.height;
+
+              // Cria canvas e desenha com fundo branco (evita fundo preto em JPEG)
+              const canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, w, h);
+              ctx.drawImage(imgBitmap, 0, 0);
+
+              // Mostra preview
+              previewArea.innerHTML = '';
+              const previewImg = document.createElement('img');
+              previewImg.src = canvas.toDataURL('image/png');
+              previewArea.appendChild(previewImg);
+
+              // Converte para blob JPEG e baixa
+              canvas.toBlob((jpegBlob) => {
+                if (!jpegBlob) return;
+                downloadBlob(jpegBlob, `clipboard-${Date.now()}.jpg`);
+              }, 'image/jpeg', 0.92 /* qualidade 0.0 - 1.0 */);
+
+            } else {
+              // Fallback: usar FileReader + Image
+              const dataUrl = await fileToDataURL(file);
+              const img = new Image();
+              img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+
+                previewArea.innerHTML = '';
+                const previewImg = document.createElement('img');
+                previewImg.src = canvas.toDataURL('image/png');
+                previewArea.appendChild(previewImg);
+
+                canvas.toBlob((jpegBlob) => {
+                  if (!jpegBlob) return;
+                  downloadBlob(jpegBlob, `clipboard-${Date.now()}.jpg`);
+                }, 'image/jpeg', 0.92);
+              };
+              img.src = dataUrl;
+            }
+          } catch (err) {
+            console.error('Erro ao processar imagem da área de transferência:', err);
+            alert('Erro ao processar a imagem. Veja o console para detalhes.');
+          }
+
+          // Já processamos uma imagem, para aqui
+          return;
+        }
+      }
+
+      // Se não encontrou item tipo image/, tenta buscar imagens embutidas em HTML (ex: copiar de uma página web)
+      const htmlData = event.clipboardData.getData('text/html');
+      if (htmlData) {
+        // Tenta extrair data:image/... do HTML
+        const m = htmlData.match(/src="(data:image\/[^"]+)"/);
+        if (m) {
+          const dataUrl = m[1];
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+
+            previewArea.innerHTML = '';
+            const previewImg = document.createElement('img');
+            previewImg.src = canvas.toDataURL('image/png');
+            previewArea.appendChild(previewImg);
+
+            canvas.toBlob((jpegBlob) => {
+              if (!jpegBlob) return;
+              downloadBlob(jpegBlob, `clipboard-${Date.now()}.jpg`);
+            }, 'image/jpeg', 0.92);
+          };
+          img.src = dataUrl;
+        }
+      }
+    });
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Libera o objeto após um pequeno atraso
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function fileToDataURL(file) {
+      return new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = rej;
+        fr.readAsDataURL(file);
+      });
+    }
+  </script>
+</body>
+</html>
